@@ -202,7 +202,9 @@ function getUserName(Array $user): String
 function usage()
 {
     echo "php download.php -t [token] [options]" . PHP_EOL . PHP_EOL;
+    echo "  -c            Include public channels." . PHP_EOL . PHP_EOL;
     echo "  -d [path]     Download destination. Defaults to the current working directory." . PHP_EOL . PHP_EOL;
+    echo "  -g            Include private groups and private multi-user instant messages." . PHP_EOL . PHP_EOL;
     echo "  -h            Show this help." . PHP_EOL . PHP_EOL;
     echo "  -i            Include files belonging to private instant messages between users." . PHP_EOL . PHP_EOL;
     echo "  -r            Remove files from Slack." . PHP_EOL . PHP_EOL;
@@ -216,7 +218,7 @@ function usage()
 /**
  * Handle command line arguments
  */
-$arguments = getopt("hirqsd:t:w:");
+$arguments = getopt("chgirqsd:t:w:");
 
 if ((count($arguments) == 0) or (array_key_exists('h', $arguments))) {
     usage();
@@ -228,13 +230,15 @@ if (array_key_exists('t', $arguments)) {
     error("providing a token is required.");
 }
 
-$destination = array_key_exists('d', $arguments) ? $arguments['d'] : __DIR__ . '/downloads';
-$get_ims     = array_key_exists('i', $arguments) ? is_bool($arguments['i']) : false;
-$remove      = array_key_exists('r', $arguments) ? is_bool($arguments['r']) : false;
-$simulation  = array_key_exists('s', $arguments) ? is_bool($arguments['s']) : false;
-$quiet       = array_key_exists('q', $arguments) ? is_bool($arguments['q']) : false;
-$weeks       = array_key_exists('w', $arguments) ? $arguments['w'] : 26;
-$timestamp   = strtotime("-" . $weeks . " weeks");
+$destination  = array_key_exists('d', $arguments) ? $arguments['d'] : __DIR__ . '/downloads';
+$get_channels = array_key_exists('c', $arguments) ? is_bool($arguments['c']) : false;
+$get_groups   = array_key_exists('g', $arguments) ? is_bool($arguments['g']) : false;
+$get_ims      = array_key_exists('i', $arguments) ? is_bool($arguments['i']) : false;
+$remove       = array_key_exists('r', $arguments) ? is_bool($arguments['r']) : false;
+$simulation   = array_key_exists('s', $arguments) ? is_bool($arguments['s']) : false;
+$quiet        = array_key_exists('q', $arguments) ? is_bool($arguments['q']) : false;
+$weeks        = array_key_exists('w', $arguments) ? $arguments['w'] : 26;
+$timestamp    = strtotime("-" . $weeks . " weeks");
 
 
 /**
@@ -322,8 +326,8 @@ foreach ($files as $file) {
             "user"                => $user,
         ];
 
-        if ($get_ims) {
-            foreach ($file->getIms() as $im) {
+        foreach ($file->getIms() as $im) {
+            if ($get_ims) {
                 $info = getChannel('conversation', $im, $channels, $token);
 
                 if ($info[0] !== $file->getUser()) {
@@ -338,10 +342,10 @@ foreach ($files as $file) {
                 $metadata["ims"] = array_merge($metadata["ims"], ["with" => $partner]);
 
                 // Write file to the directory name of the last encountered conversation
-                $dirname1 = substr(normalize("im " . getUserName($user) . " with " . $partnername), 0, 254);
-                $target1 = $destination . DIRECTORY_SEPARATOR . $dirname1;
-                $dirname2 = substr(normalize("im " . $partnername . " with " . getUserName($user)), 0, 254);
-                $target2 = $destination . DIRECTORY_SEPARATOR . $dirname2;
+                $dirname1 = substr(normalize(getUserName($user) . " with " . $partnername), 0, 254);
+                $target1 = $destination . DIRECTORY_SEPARATOR . "ims" . DIRECTORY_SEPARATOR . $dirname1;
+                $dirname2 = substr(normalize($partnername . " with " . getUserName($user)), 0, 254);
+                $target2 = $destination . DIRECTORY_SEPARATOR . "ims" . DIRECTORY_SEPARATOR . $dirname2;
 
                 /**
                  * Use "im [user] with [partner]" unless "im [partner] with [user]" already exists
@@ -354,26 +358,38 @@ foreach ($files as $file) {
                     $dirname = $dirname1;
                     $target  = $target1;
                 }
+                $process = true;
+            } else {
+                $process = false;
             }
-            $process = true;
-        } else {
-            $process = false;
         }
 
         foreach ($file->getGroups() as $group) {
-            $info = getChannel('group', $group, $channels, $token);
-            // Write file to the directory name of the last encountered group
-            $process = true;
-            $target = $destination . DIRECTORY_SEPARATOR . substr($info["name"], 0, 254);
-            $metadata["groups"] = array_merge($metadata["groups"], $info);
+            if ($get_groups) {
+                $info = getChannel('group', $group, $channels, $token);
+                // Write file to the directory name of the last encountered group
+                if(preg_match("/^mpdm-/", $info["name"])) {
+                    $target = $destination . DIRECTORY_SEPARATOR . "mpims" . DIRECTORY_SEPARATOR . substr($info["name"], 5, 259);
+                } else {
+                    $target = $destination . DIRECTORY_SEPARATOR . "groups" . DIRECTORY_SEPARATOR . substr($info["name"], 0, 254);
+                }
+                $metadata["groups"] = array_merge($metadata["groups"], $info);
+                $process = true;
+            } else {
+                $process = false;
+            }
         }
 
         foreach ($file->getChannels() as $channel) {
-            $info = getChannel('channel', $channel, $channels, $token);
-            // Write file to the directory name of the last encountered channel
-            $process = true;
-            $target = $destination . DIRECTORY_SEPARATOR . substr($info["name"], 0, 254);
-            $metadata["channels"] = array_merge($metadata["channels"], $info);
+            if ($get_channels) {
+                $info = getChannel('channel', $channel, $channels, $token);
+                // Write file to the directory name of the last encountered channel
+                $target = $destination . DIRECTORY_SEPARATOR . "channels" . DIRECTORY_SEPARATOR . substr($info["name"], 0, 254);
+                $metadata["channels"] = array_merge($metadata["channels"], $info);
+                $process = true;
+            } else {
+                $process = false;
+            }
         }
 
         if ($process) {
@@ -410,7 +426,7 @@ foreach ($files as $file) {
 
             output($quiet, ": Done!" . PHP_EOL);
         } else {
-            output($quiet, "        : Skipped private file!" . PHP_EOL);
+            output($quiet, "        : Skipped file not within download scope!" . PHP_EOL);
         }
     } else {
         output($quiet, "        : Skipped non-downloadable file!" . PHP_EOL);

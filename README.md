@@ -33,7 +33,7 @@ The tool uses the Slack API to download and (optionally) delete files from Slack
 
 Run this script from the command line using PHP:
 
-`php download.php -t [xoxp-xxxxxxxxxxx-xxxxxxxxxxx-xxxxxxxxxxxx-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx]`
+`php download.php -t [xoxp-xxxxxxxxxxx-xxxxxxxxxxx-xxxxxxxxxxxx-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx] [-c|-g|-i]`
 
 More options are available and can be retrieved using the built-in help: `php download.php -h`.
 
